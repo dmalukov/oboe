@@ -128,6 +128,8 @@ oboe::Result HelloOboeEngine::createPlaybackStream(oboe::AudioStreamBuilder buil
         ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
         ->setFormat(oboe::AudioFormat::Float)
         ->setCallback(mLatencyCallback.get())
+        ->setUsage(oboe::Usage::VoiceCommunication)
+        ->setContentType(oboe::ContentType::Speech)
         ->openManagedStream(mStream);
 }
 

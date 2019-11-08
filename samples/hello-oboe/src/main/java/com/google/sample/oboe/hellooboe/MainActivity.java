@@ -17,19 +17,33 @@
 package com.google.sample.oboe.hellooboe;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import androidx.core.view.MotionEventCompat;
 
+import android.os.IBinder;
+import android.telecom.Connection;
+import android.telecom.DisconnectCause;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.SimpleAdapter;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import com.example.tcomtest.CallService;
+import com.example.tcomtest.TComConnection;
+import com.example.tcomtest.TComManager;
+import com.example.tcomtest.TComService;
 import com.google.sample.audio_device.AudioDeviceListEntry;
 import com.google.sample.audio_device.AudioDeviceSpinner;
 
@@ -89,6 +103,7 @@ public class MainActivity extends Activity {
         setupChannelCountSpinner();
         setupBufferSizeSpinner();
 
+        init();
     }
     /*
     * Creating engine in onResume() and destroying in onPause() so the stream retains exclusive
@@ -280,5 +295,156 @@ public class MainActivity extends Activity {
             audioApiOptions.add(option);
         }
         return audioApiOptions;
+    }
+
+
+
+
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Intent intent = new Intent(this, CallService.class);
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        closeConnection();
+        unbindService(serviceConnection);
+    }
+
+    class CallServiceConnection implements ServiceConnection {
+        private CallService callService = null;
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            CallService.CallServiceBinder callSrvBinder = (CallService.CallServiceBinder)binder;
+            CallService service = callSrvBinder.getCallService();
+            service.setConnectionListener(con -> { addConnection(con); return null; } );
+            this.callService = service;
+        }
+
+        public void onServiceDisconnected(ComponentName name) {
+            callService.setConnectionListener((con)-> null);
+        }
+    }
+
+    private boolean hasPermissions() {
+        for (String permission : requiredPermissions) {
+            if (checkSelfPermission(permission) !=PackageManager.PERMISSION_GRANTED)
+                return false;
+        }
+        return true;
+    }
+
+    private void closeConnection() {
+        if (connection != null) {
+            if (!connection.isClosed()) {
+                connection.setDisconnected(new DisconnectCause(DisconnectCause.CANCELED));
+            }
+            connection.setListener((conn)->null);
+            connection.destroy();
+            connection = null;
+        }
+
+        state_label.setText("state: no call");
+    }
+
+
+    private void addConnection(TComConnection newConnection) {
+        newConnection.setListener(it -> {
+            String state = Connection.stateToString(it);
+            state_label.setText(String.format( "state: %s", state));
+            return null;
+        });
+
+        this.connection = newConnection;
+        String state = Connection.stateToString(newConnection.getState());
+        state_label.setText(String.format( "state: %s", state));
+    }
+
+
+    private CallServiceConnection serviceConnection;
+    private TComConnection connection;
+    private TComManager tcomManager;
+    private String[] requiredPermissions = {android.Manifest.permission.READ_PHONE_STATE, android.Manifest.permission.READ_CALL_LOG};
+    private Button answer_btn;
+    private Button drop_btn;
+    private Button incoming_btn;
+    private Button outgoing_btn;
+    private TextView state_label;
+
+    private void init() {
+        answer_btn = findViewById(R.id.answer_btn);
+        drop_btn = findViewById(R.id.drop_btn);
+        incoming_btn = findViewById(R.id.incoming_btn);
+        outgoing_btn = findViewById(R.id.outgoing_btn);
+        state_label = findViewById(R.id.state_label);
+        tcomManager = new TComManager(getApplicationContext());
+        serviceConnection = new CallServiceConnection();
+
+
+        drop_btn.setOnClickListener(v -> closeConnection());
+
+        answer_btn.setOnClickListener( v -> {
+            if (connection != null) {
+                connection.setActive();
+            } else {
+                Toast.makeText(getApplicationContext(), "there is no call", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        incoming_btn.setOnClickListener( v -> {
+            if (!hasPermissions()) {
+                requestPermissions(requiredPermissions, 22);
+                Toast.makeText(getApplicationContext(), "don't have permissions", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (connection != null) {
+                Toast.makeText(getApplicationContext(), "drop the connection first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            try {
+                if (tcomManager.registerAccount()) {
+                    tcomManager.addIncomingCall();
+                } else {
+                    Toast.makeText(getApplicationContext(), "account isn't registered", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        outgoing_btn.setOnClickListener( v-> {
+            if (!hasPermissions()) {
+                requestPermissions(requiredPermissions, 22);
+                Toast.makeText(getApplicationContext(), "don't have permissions", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (connection != null) {
+                Toast.makeText(getApplicationContext(), "drop the connection first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            try {
+                if (tcomManager.registerAccount()) {
+                    tcomManager.addOutgoingCall();
+                } else {
+                    Toast.makeText(getApplicationContext(), "account isn't registered", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }
